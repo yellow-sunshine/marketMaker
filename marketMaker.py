@@ -1,14 +1,13 @@
 
 from urllib3.exceptions import HTTPError as BaseHTTPError
-import sys  # common sys libraries such as exit and version
+import sys
 import json
-import requests  # liubrary for sending http requests
+import requests
 import random
 import time
 import datetime
-import schedule  # handles sceduling every 5 sec better than time.sleep
+import schedule
 import os
-import argparse  # so we can get arguments passed to this program
 
 '''
 Filename: marketMaker.py
@@ -18,19 +17,11 @@ Date: March 8, 2023
 '''
 
 
+# Globals
 eth_balance = 10
 usd_balance = 20000
 orderbook_url = 'https://api.rhino.fi/bfx/v2/book/tETHUSD/R0'
-
-# Globals
 current_open_orders = []
-current_orderbook = []
-current_bids = []
-current_asks = []
-current_min_ask = 0
-current_min_bid = 0
-current_max_ask = 0
-current_max_bid = 0
 firstrun = 0
 
 
@@ -95,10 +86,9 @@ def get_orderbook():
             We  only care about the combined amount being sold at each price point
             Why don't we care? Because later we will need to calculate how much of an order has been filled
             We dont care how much of each individual order has been filled, only total amount filled
-            So, here we combine the current_asks items where the price value is the same. 
+            So, here we combine the current asks items where the price value is the same and the same for the bids. 
             When doing this we will add up the amounts for each price point
-            We also dont care about order numbers so we will ignore those here 
-            This will leave us with bid and ask lists containing only prices and their amounts
+            We also dont care about order numbers so we will ignore those
             '''
             unique_prices = []
             amount_sum = []
@@ -117,6 +107,8 @@ def get_orderbook():
             # Create new list with unique prices and summed amounts
             current_orderbook = [[unique_prices[i], amount_sum[i]] for i in range(len(unique_prices))]
             # Seperate Asks and bids in different lists
+            current_bids = []
+            current_asks = []
             for order in current_orderbook:
                 if order[1] > 0:
                     current_asks.append(order)
@@ -124,8 +116,6 @@ def get_orderbook():
                     current_bids.append(order)
             # Get the current max and min bid and ask
             orderbook = {
-                "current_asks": current_asks,
-                "current_bids": current_bids,
                 "current_min_ask": min(current_asks, key=lambda x: x[0])[0],
                 "current_min_bid": min(current_bids, key=lambda x: x[0])[0],
                 "current_max_ask": max(current_asks, key=lambda x: x[0])[0],
@@ -165,7 +155,6 @@ def cancel_open_orders():
         elif open_order['type'] == 'ask':
             # add amount to ETH
             eth_balance += open_order['amount']
-            # print("Added to ETH Balance when canceling ask:", open_order['amount'])
     current_open_orders = []  # Remove all current orders
 
 
@@ -180,22 +169,23 @@ def process_filled_orders(orderbook):
     global current_open_orders
     global eth_balance
     global usd_balance
+    print("current Max Bid is", orderbook['current_max_bid'])
+    print("current min Ask is", orderbook['current_min_ask'])
     # Loop over the open orders and see how much we have sold or bought
     for open_order in current_open_orders:
-        if open_order['type'] == 'ask':
+        if open_order['type'] == 'bid':
             if open_order['price'] < orderbook['current_max_bid']:
-                print("current Max Bid is", orderbook['current_max_bid'])
                 # Loop over all current bid orders and settle the amounts that were sold
                 # For the bid to get this high, ALL of our previous ask orders below that amount would have to have been sold
                 # Here we would normally just check the order history for filled amounts to be sure but we are going to assume it for now
                 usd_balance += open_order['amount'] * open_order['price']
-                print("Added to USD Balance when processing filled ask:", open_order['amount'] * open_order['price'])
+                # print("Sold", open_order['amount'] * open_order['price'])
                 current_open_orders.remove(open_order)  # Now that it is settled, remove it from the list
-        elif open_order['type'] == 'bid':
-            if open_order['price'] > orderbook['current_min_ask']:
+        elif open_order['type'] == 'ask':
+            if open_order['price'] > orderbook['current_max_bid']:
                 # Loop over all current bid orders and settle the amounts that were bought
                 eth_balance += open_order['amount']
-                print("Added to ETH Balance when processing filled bid:", open_order['amount'])
+                # print("Bought", open_order['amount'])
                 current_open_orders.remove(open_order)  # Now that it is settled, remove it from the list
 
 
@@ -265,7 +255,6 @@ def make_orderbook():
     place_order('ask', ask_price, avg_eth_order_amount)
 
     amount = avg_usd_order_amount / orderbook['current_max_bid']
-    print("amount for bid order is", amount)
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.0001, 0.01)), amount)
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.011, 0.02)), amount)
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.021, 0.03)), amount)
