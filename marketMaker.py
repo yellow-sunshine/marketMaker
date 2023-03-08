@@ -36,16 +36,33 @@ firstrun = 0
 
 # Simple exception handler
 def raise_ex(msg, terminate):
+    """
+    Prints a message and exits if terminate is passed
+    Args:
+        msg (string): The message to print
+        terminate (bool): true or false to exit or not
+    Returns:
+        none
+    """
     print(msg)
     if terminate:
         sys.exit(1)
 
 
-# Get the content from a URL and return it. Throw exception for common issues
 def request_URL(url, rtype, headers='', payload=''):
+    """
+    Get the content from a URL and return it. Throw exception for common issues
+    Args:
+        url (string): The url we are hitting
+        rtype (string): post or get
+        headers (dict): Headers we want to send with the request
+        payload (dict): Any payload to be sent in the body
+    Returns:
+        none
+    """
     try:
-        if rtype.lower() == 'put':
-            r = requests.put(url, headers=headers, data=payload)
+        if rtype.lower() == 'post':
+            r = requests.post(url, headers=headers, data=payload)
         else:
             r = requests.get(url, headers=headers)
     except requests.exceptions.Timeout:
@@ -183,6 +200,15 @@ def process_filled_orders(orderbook):
 
 
 def place_order(type, price, amount):
+    """
+    Place and order
+    Args:
+        type (string): bid or ask
+        price (float): The USD price point of ETH
+        amount (float): the amount of ETH bidding or asking
+    Returns:
+        none
+    """
     global eth_balance
     global usd_balance
     global current_open_orders
@@ -204,6 +230,13 @@ def place_order(type, price, amount):
 
 
 def make_orderbook():
+    """
+    Makes the orderbook calling all the neccesary methods to make and settle orders
+    Args:
+        none
+    Returns:
+        none
+    """
     global firstrun
     global eth_balance
     global usd_balance
@@ -247,6 +280,13 @@ def make_orderbook():
 
 
 def task():
+    """
+    Sets up the methods that should be run on a schedule and prints out results on the screen
+    Args:
+        none
+    Returns:
+        none
+    """
     global eth_balance
     global usd_balance
     global current_open_orders
