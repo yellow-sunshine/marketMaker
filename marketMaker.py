@@ -11,7 +11,10 @@ import os
 import argparse  # so we can get arguments passed to this program
 
 '''
-Rhino Bot
+Filename: marketMaker.py
+Description: Makes a market within 5% of the current bid/ask
+Author: Brent Russell
+Date: March 8, 2023
 '''
 
 
@@ -28,7 +31,6 @@ current_min_ask = 0
 current_min_bid = 0
 current_max_ask = 0
 current_max_bid = 0
-make_orderbook_percent = 0.05  # Make orderbook within this percernt of the max bid, represented as a decimal
 firstrun = 0
 
 
@@ -58,13 +60,19 @@ def request_URL(url, rtype, headers='', payload=''):
         return r
 
 
-# Get the current orderbook, seperate it into bids and asks, and combine price amounts
 def get_orderbook():
+    """
+    Get the current orderbook, seperate it into bids and asks, and combine price amounts
+    Args:
+        none 
+    Returns:
+        none
+    """
     try:
         data = request_URL(orderbook_url, 'get')
-        orderbook = json.loads(data.content)
-        if len(orderbook) > 0:
-            current_orderbook = orderbook
+        book = json.loads(data.content)
+        if len(book) > 0:
+            current_orderbook = book
             '''
             We dont care how much is being sold in each individual order
             We  only care about the combined amount being sold at each price point
@@ -77,7 +85,7 @@ def get_orderbook():
             '''
             unique_prices = []
             amount_sum = []
-            for order in orderbook:
+            for order in book:
                 price = order[1]
                 amount = order[2]
                 # Check if price has already been seen
@@ -118,28 +126,40 @@ def get_orderbook():
 
 
 def cancel_open_orders():
+    """
+    Cancels all open orders
+    Args:
+        none 
+    Returns:
+        none
+    """
     global eth_balance
     global usd_balance
     global current_open_orders
-    # for open_order in current_open_orders:
     # Here we would cancel all open orders via the API
     # We cant for two reasons: 1) we are not actually submitting orders, 2) we are not tracking order numbers b/c we never actually submit
     # data = request_URL('https://api.stg.rhino.fi/v1/trading/w/cancelOrder', 'post','' ,'order_id')
     # Loop over orders adding back to the balances
     for open_order in current_open_orders:
         if open_order['type'] == 'bid':
-            usd_balance += open_order['amount'] * open_order['price']
-            print("Added to USD Balance when canceling bid:", open_order['amount'] * open_order['price'])
             # add amount to USD
+            usd_balance += open_order['amount'] * open_order['price']
+            # print("Added to USD Balance when canceling bid:", open_order['amount'] * open_order['price'])
         elif open_order['type'] == 'ask':
             # add amount to ETH
             eth_balance += open_order['amount']
-            print("Added to ETH Balance when canceling ask:", open_order['amount'])
+            # print("Added to ETH Balance when canceling ask:", open_order['amount'])
     current_open_orders = []  # Remove all current orders
 
 
-# Look at the orderbook, find orders that have been filled, subtrack or add those orders from the balances
 def process_filled_orders(orderbook):
+    """
+    Look at the orderbook, find orders that have been filled, subtrack or add those orders from the balances
+    Args:
+        orderbook (list): The current orderbook 
+    Returns:
+        none
+    """
     global current_open_orders
     global eth_balance
     global usd_balance
@@ -155,7 +175,7 @@ def process_filled_orders(orderbook):
                 print("Added to USD Balance when processing filled ask:", open_order['amount'] * open_order['price'])
                 current_open_orders.remove(open_order)  # Now that it is settled, remove it from the list
         elif open_order['type'] == 'bid':
-            if open_order['price'] > orderbook['current_max_ask']:
+            if open_order['price'] > orderbook['current_min_ask']:
                 # Loop over all current bid orders and settle the amounts that were bought
                 eth_balance += open_order['amount']
                 print("Added to ETH Balance when processing filled bid:", open_order['amount'])
@@ -172,7 +192,7 @@ def place_order(type, price, amount):
         eth_balance -= amount  # deduct this amount from the eth balance because the order is pending and is pledged to be sold/bought
     # Build the request and place the order here
     # order_result = requestURL(https://api.stg.rhino.fi/v1/trading/w/submitOrder)
-    print("Created an open", type, "order for", amount, "ETH at the USD price of ", price, "ETH Balance Now:", eth_balance, "USD Balance Now:", usd_balance)
+    # print("Created an open", type, "order for", amount, "ETH at the USD price of ", price, "ETH Balance Now:", eth_balance, "USD Balance Now:", usd_balance)
     new_order = {
         "order_number": random.randint(10000000, 99999999),
         "type": type,
@@ -200,15 +220,15 @@ def make_orderbook():
     usd_amount_for_use = usd_balance * random.uniform(0.16, 0.25)  # Dont use more than 16 to 25% of our usd bankroll
     avg_usd_order_amount = usd_amount_for_use / 5
 
-    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.0001, 1.01))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(0.0001, 0.01))
     place_order('ask', ask_price, avg_eth_order_amount)
-    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.011, 1.02))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(0.011, 0.02))
     place_order('ask', ask_price, avg_eth_order_amount)
-    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.021, 1.03))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(0.021, 0.03))
     place_order('ask', ask_price, avg_eth_order_amount)
-    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.031, 1.04))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(0.031, 0.04))
     place_order('ask', ask_price, avg_eth_order_amount)
-    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.041, 1.05))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(0.041, 0.05))
     place_order('ask', ask_price, avg_eth_order_amount)
 
     amount = avg_usd_order_amount / orderbook['current_max_bid']
@@ -217,7 +237,7 @@ def make_orderbook():
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.011, 0.02)), amount)
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.021, 0.03)), amount)
     place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.031, 0.04)), amount)
-    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(1.041, 1.05)), amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.041, 0.05)), amount)
 
     # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.0001, 1.01), amount)
     # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.011, 1.02), amount)
@@ -235,7 +255,7 @@ def task():
     print("\n\nETH Balance:", eth_balance, "| USD Balance:", usd_balance)
     print("\n\n======= Open Orders =======")
     for element in current_open_orders:
-        print("type", element['type'], "Price", element['price'], "Amount", element['amount'], "total_usd", element['total_usd'], )
+        print(element['type'], "Price", element['price'], "Amount", element['amount'], "total_usd", element['total_usd'], )
 
 
 # Schedule task
