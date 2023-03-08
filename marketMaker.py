@@ -16,7 +16,7 @@ Rhino Bot
 
 
 eth_balance = 10
-usd_balance = 2000
+usd_balance = 20000
 orderbook_url = 'https://api.rhino.fi/bfx/v2/book/tETHUSD/R0'
 
 # Globals
@@ -29,6 +29,7 @@ current_min_bid = 0
 current_max_ask = 0
 current_max_bid = 0
 make_orderbook_percent = 0.05  # Make orderbook within this percernt of the max bid, represented as a decimal
+firstrun = 0
 
 
 # Simple exception handler
@@ -90,15 +91,12 @@ def get_orderbook():
                     amount_sum.append(amount)
             # Create new list with unique prices and summed amounts
             current_orderbook = [[unique_prices[i], amount_sum[i]] for i in range(len(unique_prices))]
-            # print(current_orderbook)
-            # sys.exit(1)
             # Seperate Asks and bids in different lists
             for order in current_orderbook:
                 if order[1] > 0:
                     current_asks.append(order)
                 elif order[1] < 0:
                     current_bids.append(order)
-
             # Get the current max and min bid and ask
             orderbook = {
                 "current_asks": current_asks,
@@ -108,7 +106,6 @@ def get_orderbook():
                 "current_max_ask": max(current_asks, key=lambda x: x[0])[0],
                 "current_max_bid": max(current_bids, key=lambda x: x[0])[0]
             }
-
             return orderbook
         else:
             raise_ex("Orderbook was zero length", False)
@@ -120,24 +117,25 @@ def get_orderbook():
         raise_ex("get_orderbook method. Unable to find result key in json response", False)
 
 
-def place_order(type, price, amount):
+def cancel_open_orders():
     global eth_balance
     global usd_balance
-    if type == 'bid':
-        usd_balance -= amount  # deduct this amount from the balance because the order is pending and is pledged to be sold/bought
-    elif type == 'ask':
-        eth_balance += amount  # deduct this amount from the balance because the order is pending and is pledged to be sold/bought
-    # Build the request and place the order here
-    # order_result = requestURL(https://api.stg.rhino.fi/v1/trading/w/submitOrder)
-    print(amount, type, "order placed successfully for", price)
-    new_order = {
-        "order_number": random.randint(10000000, 99999999),
-        "type": type,
-        "time_entered": time,
-        "amount": amount,
-        "price": price
-    }
-    current_open_orders.append(new_order)
+    global current_open_orders
+    # for open_order in current_open_orders:
+    # Here we would cancel all open orders via the API
+    # We cant for two reasons: 1) we are not actually submitting orders, 2) we are not tracking order numbers b/c we never actually submit
+    # data = request_URL('https://api.stg.rhino.fi/v1/trading/w/cancelOrder', 'post','' ,'order_id')
+    # Loop over orders adding back to the balances
+    for open_order in current_open_orders:
+        if open_order['type'] == 'bid':
+            usd_balance += open_order['amount'] * open_order['price']
+            print("Added to USD Balance when canceling bid:", open_order['amount'] * open_order['price'])
+            # add amount to USD
+        elif open_order['type'] == 'ask':
+            # add amount to ETH
+            eth_balance += open_order['amount']
+            print("Added to ETH Balance when canceling ask:", open_order['amount'])
+    current_open_orders = []  # Remove all current orders
 
 
 # Look at the orderbook, find orders that have been filled, subtrack or add those orders from the balances
@@ -149,62 +147,95 @@ def process_filled_orders(orderbook):
     for open_order in current_open_orders:
         if open_order['type'] == 'ask':
             if open_order['price'] < orderbook['current_max_bid']:
+                print("current Max Bid is", orderbook['current_max_bid'])
                 # Loop over all current bid orders and settle the amounts that were sold
                 # For the bid to get this high, ALL of our previous ask orders below that amount would have to have been sold
                 # Here we would normally just check the order history for filled amounts to be sure but we are going to assume it for now
-                print("usd balance before", usd_balance)
-                addamount = open_order['amount'] * open_order['price']
-                print("adding open_order['amount'] * open_order['price'] to balance. amount to add", addamount,
-                      "open_order['amount']:", open_order['amount'], "open_order['price']", open_order['price'])
                 usd_balance += open_order['amount'] * open_order['price']
-                print("usd balance after", usd_balance)
-                sys.exit(1)
-                eth_balance += open_order['amount']
+                print("Added to USD Balance when processing filled ask:", open_order['amount'] * open_order['price'])
                 current_open_orders.remove(open_order)  # Now that it is settled, remove it from the list
         elif open_order['type'] == 'bid':
             if open_order['price'] > orderbook['current_max_ask']:
                 # Loop over all current bid orders and settle the amounts that were bought
-                usd_balance -= open_order['amount'] * open_order['price']
-                eth_balance -= open_order['amount']
+                eth_balance += open_order['amount']
+                print("Added to ETH Balance when processing filled bid:", open_order['amount'])
                 current_open_orders.remove(open_order)  # Now that it is settled, remove it from the list
 
 
-def cancel_orders():
-    # for open_order in current_open_orders:
-    # Here we would cancel all open orders
-    # We cant for two reasons: 1) we are not actually submitting orders, 2) we are not tracking order numbers b/c we never actually submit
-    # data = request_URL('https://api.stg.rhino.fi/v1/trading/w/cancelOrder', 'post','' ,'order_id')
-    current_open_orders = []  # Remove all current orders
+def place_order(type, price, amount):
+    global eth_balance
+    global usd_balance
+    global current_open_orders
+    if type == 'bid':
+        usd_balance -= amount * price  # deduct this amount from the balance because the order is pending and is pledged to be sold/bought
+    elif type == 'ask':
+        eth_balance -= amount  # deduct this amount from the eth balance because the order is pending and is pledged to be sold/bought
+    # Build the request and place the order here
+    # order_result = requestURL(https://api.stg.rhino.fi/v1/trading/w/submitOrder)
+    print("Created an open", type, "order for", amount, "ETH at the USD price of ", price, "ETH Balance Now:", eth_balance, "USD Balance Now:", usd_balance)
+    new_order = {
+        "order_number": random.randint(10000000, 99999999),
+        "type": type,
+        "amount": amount,
+        "price": price,
+        "total_usd": price * amount
+    }
+    current_open_orders.append(new_order)
 
 
 def make_orderbook():
+    global firstrun
+    global eth_balance
+    global usd_balance
+
     orderbook = get_orderbook()
-    process_filled_orders(orderbook)
-    cancel_orders()  # Just cancel all orders and resubmit ones that are still within the 5% threshold. It makes it easier but could be improved upon
-    current_open_orders = []  # Remove all current orders
+    firstrun += 1
+    if firstrun > 1:
+        process_filled_orders(orderbook)
+        cancel_open_orders()  # Just cancel all orders and resubmit ones that are still within the 5% threshold. It makes it easier but could be improved upon
+
     # Create new orders staggared above and bellow the best ask/bid at the order_amount_offset
     eth_amount_for_use = eth_balance * random.uniform(0.16, 0.25)  # Dont use more than 16 to 25% of our eth bankroll
+    avg_eth_order_amount = eth_amount_for_use / 5
     usd_amount_for_use = usd_balance * random.uniform(0.16, 0.25)  # Dont use more than 16 to 25% of our usd bankroll
+    avg_usd_order_amount = usd_amount_for_use / 5
 
-    print(eth_amount_for_use, "eth for use,", usd_amount_for_use, "usd for use")
-    # place_order( TYPE, random price staggard within 5% of max price, random amount used)
-    # Randoms are used here so it is not predictible and looks more natural to the market/ harder for bots to take advantage of it
-    place_order('ask', orderbook['current_max_ask'] * (1 - random.uniform(0.0001, 1.01)), eth_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('ask', orderbook['current_max_ask'] * (1 - random.uniform(0.011, 1.02)), eth_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('ask', orderbook['current_max_ask'] * (1 - random.uniform(0.021, 1.03)), eth_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('ask', orderbook['current_max_ask'] * (1 - random.uniform(0.031, 1.04)), eth_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('ask', orderbook['current_max_ask'] * (1 - random.uniform(0.041, 1.05)), eth_amount_for_use * random.uniform(1.00001, 1.00004))
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.0001, 1.01))
+    place_order('ask', ask_price, avg_eth_order_amount)
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.011, 1.02))
+    place_order('ask', ask_price, avg_eth_order_amount)
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.021, 1.03))
+    place_order('ask', ask_price, avg_eth_order_amount)
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.031, 1.04))
+    place_order('ask', ask_price, avg_eth_order_amount)
+    ask_price = orderbook['current_max_ask'] * (1 - random.uniform(1.041, 1.05))
+    place_order('ask', ask_price, avg_eth_order_amount)
 
-    place_order('bid', orderbook['current_max_bid'] * random.uniform(1.0001, 1.01), usd_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('bid', orderbook['current_max_bid'] * random.uniform(1.011, 1.02), usd_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('bid', orderbook['current_max_bid'] * random.uniform(1.021, 1.03), usd_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('bid', orderbook['current_max_bid'] * random.uniform(1.031, 1.04), usd_amount_for_use * random.uniform(1.00001, 1.00004))
-    place_order('bid', orderbook['current_max_bid'] * random.uniform(1.041, 1.05), usd_amount_for_use * random.uniform(1.00001, 1.00004))
+    amount = avg_usd_order_amount / orderbook['current_max_bid']
+    print("amount for bid order is", amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.0001, 0.01)), amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.011, 0.02)), amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.021, 0.03)), amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(0.031, 0.04)), amount)
+    place_order('bid', orderbook['current_max_bid'] * (1 - random.uniform(1.041, 1.05)), amount)
+
+    # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.0001, 1.01), amount)
+    # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.011, 1.02), amount)
+    # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.021, 1.03), amount)
+    # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.031, 1.04), amount)
+    # place_order('bid', orderbook['current_max_bid'] * random.uniform(1.041, 1.05), amount)
 
 
 def task():
+    global eth_balance
+    global usd_balance
+    global current_open_orders
     os.system("clear")
     make_orderbook()
+    print("\n\nETH Balance:", eth_balance, "| USD Balance:", usd_balance)
+    print("\n\n======= Open Orders =======")
+    for element in current_open_orders:
+        print("type", element['type'], "Price", element['price'], "Amount", element['amount'], "total_usd", element['total_usd'], )
 
 
 # Schedule task
